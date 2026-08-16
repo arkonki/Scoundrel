@@ -41,10 +41,14 @@ export const t = {
     take: "Take",
     victory: "VICTORY",
     defeated: "DEFEATED",
+    stuckTitle: "TRAPPED",
+    stuckInfo: "You have no valid moves left. You cannot flee, and you cannot drink any more potions in this room.",
     finalScore: "Final Score",
     playAgain: "Play Again",
+    restartGame: "Restart Game",
     logEnter: "You cautiously step into the dungeon...",
     logPotionLimit: "You can only drink one health potion per room!",
+    logStuck: "You are trapped with no escape...",
     logDrank: (n: string, h: number) => `Drank ${n}, recovering ${h} HP.`,
     logEquipped: (n: string) => `Equipped ${n}.`,
     logSlew: (n: string, d: number) => `Slew ${n} with weapon. Took ${d} damage.`,
@@ -122,11 +126,15 @@ export const t = {
 
     victory: "VÕIT",
     defeated: "HUKKUSID",
+    stuckTitle: "LÕKSUS",
+    stuckInfo: "Sul pole ühtegi võimalikku käiku. Sa ei saa põgeneda ega selles toas rohkem tervisejooke juua.",
     finalScore: "Lõpptulemus",
     playAgain: "Mängi uuesti",
+    restartGame: "Alusta uuesti",
 
     logEnter: "Astud ettevaatlikult pimedasse koopasse...",
     logPotionLimit: "Selles toas oled juba ühe tervisejoogi kasutanud!",
+    logStuck: "Oled lõksus, ilma igasuguse pääseteeta...",
 
     logDrank: (n: string, h: number) =>
       `Jõid ${n} ja taastasid ${h} elupunkti.`,

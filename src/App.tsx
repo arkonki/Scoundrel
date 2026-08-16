@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, Shield, Sword, RefreshCw, X, Play, Info, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Language, t, getThematicName } from './i18n';
@@ -19,6 +19,7 @@ interface LogEntry {
 }
 
 interface PlayingCardProps {
+  key?: React.Key;
   card: CardData | null;
   isSelected?: boolean;
   isShaking?: boolean;
@@ -146,7 +147,7 @@ export default function App() {
   const [hasFledThisDungeon, setHasFledThisDungeon] = useState(false);
   const [potionsUsedThisTurn, setPotionsUsedThisTurn] = useState(0);
   
-  const [status, setStatus] = useState<'playing' | 'won' | 'lost'>('playing');
+  const [status, setStatus] = useState<'playing' | 'won' | 'lost' | 'stuck'>('playing');
   const [score, setScore] = useState(0);
   
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
@@ -163,6 +164,31 @@ export default function App() {
     const stored = localStorage.getItem('scoundrel_highscore');
     if (stored !== null) setHighScore(parseInt(stored, 10));
   }, []);
+
+  useEffect(() => {
+    if (status !== 'playing' || room.length === 0 || isAnimating) return;
+    
+    const onlyPotionsLeft = room.every(c => c.suit === 'hearts');
+    if (deck.length === 0 && onlyPotionsLeft) {
+      setStatus('won');
+      const finalScore = calculateWinScore(health, room);
+      setScore(finalScore);
+      updateHighScore(finalScore);
+      addLog(text.logSurvived, 'victory');
+      return;
+    }
+
+    const playableCards = room.filter(c => c.suit !== 'hearts' || potionsUsedThisTurn === 0);
+    const canFlee = !hasFledThisDungeon && cardsFacedThisTurn < 3;
+    
+    if (playableCards.length === 0 && !canFlee) {
+      setStatus('stuck');
+      const finalScore = calculateLossScore(health, deck, room);
+      setScore(finalScore);
+      updateHighScore(finalScore);
+      addLog(text.logStuck, 'defeat');
+    }
+  }, [room, potionsUsedThisTurn, hasFledThisDungeon, cardsFacedThisTurn, status, isAnimating, health, deck, text]);
 
   const updateHighScore = (newScore: number) => {
     setHighScore(prev => {
@@ -733,8 +759,14 @@ export default function App() {
               className={`max-w-md w-full bg-slate-900 border-2 rounded-3xl p-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] ${status === 'won' ? 'border-yellow-500' : 'border-red-900'}`}
             >
               <h2 className={`text-5xl font-black font-serif mb-2 ${status === 'won' ? 'text-yellow-400' : 'text-red-600'}`}>
-                {status === 'won' ? text.victory : text.defeated}
+                {status === 'won' ? text.victory : (status === 'stuck' ? text.stuckTitle : text.defeated)}
               </h2>
+
+              {status === 'stuck' && (
+                <p className="text-slate-300 font-sans mt-4 text-sm sm:text-base leading-relaxed px-4">
+                  {text.stuckInfo}
+                </p>
+              )}
               
               <div className="my-8 py-6 bg-slate-950 rounded-2xl border border-slate-800">
                 <p className="text-slate-400 uppercase tracking-widest text-sm font-bold mb-1">{text.finalScore}</p>
@@ -747,7 +779,7 @@ export default function App() {
                 onClick={initializeGame}
                 className="w-full py-4 bg-slate-100 hover:bg-white text-slate-900 rounded-xl font-bold font-serif tracking-widest uppercase text-xl shadow-xl transition-transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3"
               >
-                <RefreshCw size={24} /> {text.playAgain}
+                <RefreshCw size={24} /> {status === 'stuck' ? text.restartGame : text.playAgain}
               </button>
             </motion.div>
           </motion.div>
