@@ -563,6 +563,16 @@ export default function App() {
             
             <div className="space-y-6">
               <div className="flex items-center justify-between">
+                <span className="text-slate-200 font-sans font-bold">{text.language}</span>
+                <button 
+                  onClick={() => setLang(lang === 'en' ? 'et' : 'en')}
+                  className="bg-slate-800 border border-emerald-800/50 text-yellow-500 px-4 py-1.5 rounded-lg flex items-center gap-2 hover:bg-slate-700 transition-colors font-bold text-sm"
+                >
+                  <Globe size={16} /> {lang === 'en' ? 'EN' : 'EE'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between">
                 <span className="text-slate-200 font-sans font-bold">{text.soundEffects}</span>
                 <button 
                   onClick={() => setSoundEnabled(prev => !prev)}
