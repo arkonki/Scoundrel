@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Shield, Sword, RefreshCw, X, Play, Info, Globe } from 'lucide-react';
+import { Heart, Shield, Sword, RefreshCw, X, Play, Info, Globe, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Language, t, getThematicName } from './i18n';
+import { audio } from './audio';
 
 type Suit = 'clubs' | 'spades' | 'hearts' | 'diamonds';
 type Rank = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
@@ -29,6 +30,7 @@ interface PlayingCardProps {
   className?: string;
   showTooltip?: boolean;
   lang: Language;
+  reduceMotion?: boolean;
 }
 
 const PlayingCard = ({ 
@@ -40,7 +42,8 @@ const PlayingCard = ({
   onClick, 
   className = '',
   showTooltip = false,
-  lang
+  lang,
+  reduceMotion = false
 }: PlayingCardProps) => {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
 
@@ -82,7 +85,7 @@ const PlayingCard = ({
   );
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!onClick) return;
+    if (!onClick || reduceMotion) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -97,8 +100,8 @@ const PlayingCard = ({
       onClick={onClick}
       onPointerMove={handlePointerMove}
       onPointerLeave={handlePointerLeave}
-      style={{ transform: `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale3d(${isSelected ? 1.05 : 1}, ${isSelected ? 1.05 : 1}, 1)` }}
-      className={`group ${baseClasses} ${stateClasses} ${shakingClasses} ${className} transition-transform ease-out ${tilt.x === 0 ? 'duration-300' : 'duration-75'}`}
+      style={{ transform: reduceMotion ? `scale(${isSelected ? 1.05 : 1})` : `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale3d(${isSelected ? 1.05 : 1}, ${isSelected ? 1.05 : 1}, 1)` }}
+      className={`group ${baseClasses} ${stateClasses} ${reduceMotion ? '' : shakingClasses} ${className} ${reduceMotion ? '' : 'transition-transform ease-out'} ${tilt.x === 0 ? 'duration-300' : 'duration-75'}`}
     >
       {tooltip}
       <div className={`text-sm sm:text-lg font-bold leading-none font-serif ${colorClass}`}>
@@ -113,7 +116,7 @@ const PlayingCard = ({
     </div>
   );
 
-  if (animateEntrance) {
+  if (animateEntrance && !reduceMotion) {
     return (
       <motion.div 
         initial={{ opacity: 0, y: 40, scale: 0.8 }} 
@@ -161,6 +164,19 @@ export default function App() {
   const [globalShake, setGlobalShake] = useState(false);
   const [hoverWeaponStack, setHoverWeaponStack] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('scoundrel_sound') !== 'false');
+  const [reduceMotion, setReduceMotion] = useState(() => localStorage.getItem('scoundrel_reduce_motion') === 'true');
+
+  useEffect(() => {
+    localStorage.setItem('scoundrel_sound', String(soundEnabled));
+    audio.setEnabled(soundEnabled);
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('scoundrel_reduce_motion', String(reduceMotion));
+  }, [reduceMotion]);
 
   useEffect(() => {
     const stored = localStorage.getItem('scoundrel_highscore');
@@ -240,6 +256,7 @@ export default function App() {
     setFloatingTexts([]);
     setLogs([]);
     addLog(text.logEnter, 'neutral');
+    audio.playCardDeal();
   };
 
   const calculateLossScore = (currentHealth: number, currentDeck: CardData[], currentRoom: CardData[]) => {
@@ -319,11 +336,13 @@ export default function App() {
     if (card.suit === 'hearts') {
       if (potionsUsedThisTurn >= 1) {
         addLog(text.logPotionWasted(cardName), 'neutral');
+        audio.playError();
       } else {
         const healAmount = Math.min(20 - health, card.rank);
         newHealth = Math.min(20, health + card.rank);
         newPotionsUsed++;
         addLog(text.logDrank(cardName, healAmount), 'heal');
+        audio.playHeal();
         if (healAmount > 0) {
           spawnFloatingText(healAmount, 'heal');
         }
@@ -332,6 +351,7 @@ export default function App() {
       newWeapon = card;
       newMonstersOnWeapon = [];
       addLog(text.logEquipped(cardName), 'neutral');
+      audio.playEquip();
     } else {
       const monsterValue = card.rank;
       let previousMonsterDefeatedRank = monstersOnWeapon.length > 0 ? monstersOnWeapon[monstersOnWeapon.length - 1].rank : 0;
@@ -344,6 +364,7 @@ export default function App() {
       } else {
         addLog(text.logFought(cardName, damage), 'damage');
       }
+      audio.playAttack();
     }
 
     if (newHealth < health) spawnFloatingText(health - newHealth, 'damage');
@@ -358,6 +379,7 @@ export default function App() {
       setScore(finalScore);
       updateHighScore(finalScore);
       addLog(text.logSuccumbed, 'defeat');
+      audio.playDefeat();
       setHealth(newHealth);
       setRoom(newRoom);
       setWeapon(newWeapon);
@@ -381,6 +403,7 @@ export default function App() {
         setPotionsUsedThisTurn(0);
         setHasFledThisDungeon(false);
         addLog(text.logProceed, 'neutral');
+        audio.playCardDeal();
       }
       
       if (currentDeck.length === 0 && currentRoom.length <= 1) {
@@ -389,6 +412,7 @@ export default function App() {
         setScore(finalScore);
         updateHighScore(finalScore);
         addLog(text.logSurvived, 'victory');
+        audio.playVictory();
       }
       
       setDeck(currentDeck);
@@ -439,6 +463,7 @@ export default function App() {
     setSelectedCard(null);
     addLog(text.logFled, 'neutral');
     triggerHaptic('light');
+    audio.playFlee();
   };
 
   const renderActionPanel = () => {
@@ -493,8 +518,6 @@ export default function App() {
       actionText = text.tooltipPotionWasted;
     }
 
-    const canUse = true;
-
     return (
       <div className="flex flex-col h-full justify-between gap-4 p-2">
         <div>
@@ -516,6 +539,72 @@ export default function App() {
       </div>
     );
   };
+
+  const settingsModal = (
+    <AnimatePresence>
+      {showSettings && (
+        <motion.div 
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <motion.div 
+            initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+            className="bg-slate-900 rounded-2xl max-w-sm w-full p-6 border border-emerald-800 shadow-2xl relative"
+          >
+            <button 
+              onClick={() => setShowSettings(false)}
+              className="absolute top-4 right-4 text-emerald-600 hover:text-emerald-400 p-2"
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-serif font-bold text-emerald-400 mb-6 flex items-center gap-2">
+              <Settings size={24} /> {text.settings}
+            </h2>
+            
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-200 font-sans font-bold">{text.soundEffects}</span>
+                <button 
+                  onClick={() => setSoundEnabled(prev => !prev)}
+                  className={`w-14 h-8 rounded-full transition-colors relative ${soundEnabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                >
+                  <div className={`w-6 h-6 rounded-full bg-white absolute top-1 transition-transform ${soundEnabled ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-slate-200 font-sans font-bold">{text.reduceMotion}</span>
+                <button 
+                  onClick={() => setReduceMotion(prev => !prev)}
+                  className={`w-14 h-8 rounded-full transition-colors relative ${reduceMotion ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                >
+                  <div className={`w-6 h-6 rounded-full bg-white absolute top-1 transition-transform ${reduceMotion ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+
+              <div className="pt-6 border-t border-slate-800">
+                <div className="text-center">
+                  <div className="text-emerald-500/80 text-sm font-bold uppercase tracking-widest mb-1">
+                    {text.highScoreText}
+                  </div>
+                  <div className="text-4xl font-serif font-black text-yellow-500">
+                    {highScore !== null ? highScore : 0}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <button 
+              onClick={() => setShowSettings(false)}
+              className="w-full mt-8 py-3 bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-400 rounded-xl font-bold transition-colors"
+            >
+              {text.close}
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   const rulesModal = (
     <AnimatePresence>
@@ -681,6 +770,13 @@ export default function App() {
                 title={text.howToPlay}
               >
                 <Info size={24} />
+              </button>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 sm:p-3 rounded-lg text-emerald-600 hover:text-emerald-400 hover:bg-emerald-900/30 transition-colors border border-transparent"
+                title={text.settings}
+              >
+                <Settings size={24} />
               </button>
             </div>
           </div>
@@ -856,6 +952,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {settingsModal}
       {rulesModal}
     </div>
   );
