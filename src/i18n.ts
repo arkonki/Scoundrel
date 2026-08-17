@@ -50,6 +50,7 @@ export const t = {
     logPotionLimit: "You can only drink one health potion per room!",
     logStuck: "You are trapped with no escape...",
     logDrank: (n: string, h: number) => `Drank ${n}, recovering ${h} HP.`,
+    logPotionWasted: (n: string) => `Discarded ${n} (potion limit reached).`,
     logEquipped: (n: string) => `Equipped ${n}.`,
     logSlew: (n: string, d: number) => `Slew ${n} with weapon. Took ${d} damage.`,
     logFought: (n: string, d: number) => `Fought ${n} barehanded. Took ${d} damage!`,
@@ -58,6 +59,7 @@ export const t = {
     logSurvived: "You survived the dungeon!",
     logFled: "You fled the room, retreating to the shadows.",
     tooltipPotion: (v: number) => `Restores ${v} health (Max 20). Limit 1 per turn.`,
+    tooltipPotionWasted: "Potion limit reached. Using this will simply discard it.",
     tooltipWeapon: (v: number) => `Blocks up to ${v} damage. Replaces current weapon.`,
     tooltipMonster: (v: number) => `Deals ${v} damage. Fight barehanded or with a weapon.`,
     langToggle: "EE"
@@ -103,6 +105,7 @@ export const t = {
     tapCard: "Puuduta toas olevat kaarti, et näha selle üksikasju ja võimalikke tegevusi.",
 
     potionLimit: "Ei saa kasutada: selles toas oled juba ühe tervisejoogi kasutanud.",
+    tooltipPotionWasted: "Oled juba tervisejooki kasutanud. See kaart visatakse tühjalt ära.",
 
     drinkPotion: (h: number) =>
       `Joo tervisejook ja taasta ${h} elupunkti.`,
@@ -138,6 +141,9 @@ export const t = {
 
     logDrank: (n: string, h: number) =>
       `Jõid ${n} ja taastasid ${h} elupunkti.`,
+    
+    logPotionWasted: (n: string) =>
+      `Viskasid ära ${n} (piirang käes).`,
 
     logEquipped: (n: string) =>
       `Varustasid relva: ${n}.`,

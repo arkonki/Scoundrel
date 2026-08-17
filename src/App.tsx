@@ -146,8 +146,9 @@ export default function App() {
   const [cardsFacedThisTurn, setCardsFacedThisTurn] = useState(0);
   const [hasFledThisDungeon, setHasFledThisDungeon] = useState(false);
   const [potionsUsedThisTurn, setPotionsUsedThisTurn] = useState(0);
+  const [lastResolvedCard, setLastResolvedCard] = useState<CardData | null>(null);
   
-  const [status, setStatus] = useState<'playing' | 'won' | 'lost' | 'stuck'>('playing');
+  const [status, setStatus] = useState<'playing' | 'won' | 'lost'>('playing');
   const [score, setScore] = useState(0);
   
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
@@ -159,6 +160,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [globalShake, setGlobalShake] = useState(false);
   const [hoverWeaponStack, setHoverWeaponStack] = useState(false);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('scoundrel_highscore');
@@ -171,24 +173,12 @@ export default function App() {
     const onlyPotionsLeft = room.every(c => c.suit === 'hearts');
     if (deck.length === 0 && onlyPotionsLeft) {
       setStatus('won');
-      const finalScore = calculateWinScore(health, room);
+      const finalScore = calculateWinScore(health, room, lastResolvedCard);
       setScore(finalScore);
       updateHighScore(finalScore);
       addLog(text.logSurvived, 'victory');
-      return;
     }
-
-    const playableCards = room.filter(c => c.suit !== 'hearts' || potionsUsedThisTurn === 0);
-    const canFlee = !hasFledThisDungeon && cardsFacedThisTurn < 3;
-    
-    if (playableCards.length === 0 && !canFlee) {
-      setStatus('stuck');
-      const finalScore = calculateLossScore(health, deck, room);
-      setScore(finalScore);
-      updateHighScore(finalScore);
-      addLog(text.logStuck, 'defeat');
-    }
-  }, [room, potionsUsedThisTurn, hasFledThisDungeon, cardsFacedThisTurn, status, isAnimating, health, deck, text]);
+  }, [room, status, isAnimating, health, deck, text, lastResolvedCard]);
 
   const updateHighScore = (newScore: number) => {
     setHighScore(prev => {
@@ -220,7 +210,7 @@ export default function App() {
     let idCounter = 0;
     
     suits.forEach(suit => {
-      const maxRank = suit === 'diamonds' ? 10 : 14;
+      const maxRank = (suit === 'diamonds' || suit === 'hearts') ? 10 : 14;
       for (let rank = 2; rank <= maxRank; rank++) {
         newDeck.push({ id: `card-${idCounter++}`, suit, rank: rank as Rank });
       }
@@ -259,10 +249,11 @@ export default function App() {
     return -unplayedValue;
   };
 
-  const calculateWinScore = (currentHealth: number, currentRoom: CardData[]) => {
-    let unplayedValue = 0;
-    currentRoom.forEach(c => { if (c.suit !== 'hearts') unplayedValue += c.rank; });
-    return currentHealth > 0 ? currentHealth - unplayedValue : calculateLossScore(currentHealth, [], currentRoom);
+  const calculateWinScore = (currentHealth: number, currentRoom: CardData[], lastCard: CardData | null) => {
+    if (currentHealth === 20 && lastCard?.suit === 'hearts') {
+      return 20 + lastCard.rank;
+    }
+    return currentHealth;
   };
 
   const spawnFloatingText = (amount: number, type: 'damage' | 'heal') => {
@@ -273,11 +264,6 @@ export default function App() {
 
   const handleFaceCard = (card: CardData) => {
     if (status !== 'playing' || isAnimating) return;
-
-    if (card.suit === 'hearts' && potionsUsedThisTurn >= 1) {
-      addLog(text.logPotionLimit, 'neutral');
-      return;
-    }
 
     const isMonster = card.suit === 'clubs' || card.suit === 'spades';
     let damage = 0;
@@ -294,7 +280,7 @@ export default function App() {
         }
       }
       
-      const canUseWeapon = weapon && (monstersOnWeapon.length === 0 || monsterValue < previousMonsterDefeatedRank);
+      const canUseWeapon = weapon && (monstersOnWeapon.length === 0 || monsterValue <= previousMonsterDefeatedRank);
       
       if (canUseWeapon) {
         damage = Math.max(0, monsterValue - effectiveWeaponValue);
@@ -331,10 +317,17 @@ export default function App() {
     const cardName = getThematicName(card, lang);
 
     if (card.suit === 'hearts') {
-      const healAmount = Math.min(20 - health, card.rank);
-      newHealth = Math.min(20, health + card.rank);
-      newPotionsUsed++;
-      addLog(text.logDrank(cardName, healAmount), 'heal');
+      if (potionsUsedThisTurn >= 1) {
+        addLog(text.logPotionWasted(cardName), 'neutral');
+      } else {
+        const healAmount = Math.min(20 - health, card.rank);
+        newHealth = Math.min(20, health + card.rank);
+        newPotionsUsed++;
+        addLog(text.logDrank(cardName, healAmount), 'heal');
+        if (healAmount > 0) {
+          spawnFloatingText(healAmount, 'heal');
+        }
+      }
     } else if (card.suit === 'diamonds') {
       newWeapon = card;
       newMonstersOnWeapon = [];
@@ -342,7 +335,7 @@ export default function App() {
     } else {
       const monsterValue = card.rank;
       let previousMonsterDefeatedRank = monstersOnWeapon.length > 0 ? monstersOnWeapon[monstersOnWeapon.length - 1].rank : 0;
-      const canUseWeapon = weapon && (monstersOnWeapon.length === 0 || monsterValue < previousMonsterDefeatedRank);
+      const canUseWeapon = weapon && (monstersOnWeapon.length === 0 || monsterValue <= previousMonsterDefeatedRank);
       
       newHealth -= damage;
       if (canUseWeapon) {
@@ -391,7 +384,7 @@ export default function App() {
       }
       
       if (currentDeck.length === 0 && currentRoom.length <= 1) {
-        const finalScore = calculateWinScore(newHealth, currentRoom);
+        const finalScore = calculateWinScore(newHealth, currentRoom, card);
         setStatus('won');
         setScore(finalScore);
         updateHighScore(finalScore);
@@ -406,6 +399,23 @@ export default function App() {
     setSelectedCard(null);
     setIsAnimating(false);
     setShakingCardId(null);
+  };
+
+  const handleNewGameMidGame = () => {
+    if (status === 'playing') {
+      setShowRestartConfirm(true);
+    } else {
+      initializeGame();
+    }
+  };
+
+  const confirmRestart = () => {
+    setShowRestartConfirm(false);
+    initializeGame();
+  };
+
+  const cancelRestart = () => {
+    setShowRestartConfirm(false);
   };
 
   const handleFlee = () => {
@@ -464,7 +474,7 @@ export default function App() {
         }
       }
       
-      const canUseWeapon = weapon && (monstersOnWeapon.length === 0 || monsterValue < previousMonsterDefeatedRank);
+      const canUseWeapon = weapon && (monstersOnWeapon.length === 0 || monsterValue <= previousMonsterDefeatedRank);
       
       if (canUseWeapon) {
         damagePreview = Math.max(0, monsterValue - effectiveWeaponValue);
@@ -479,7 +489,11 @@ export default function App() {
       }
     }
 
-    const canUse = selectedCard.suit !== 'hearts' || potionsUsedThisTurn === 0;
+    if (selectedCard.suit === 'hearts' && potionsUsedThisTurn >= 1) {
+      actionText = text.tooltipPotionWasted;
+    }
+
+    const canUse = true;
 
     return (
       <div className="flex flex-col h-full justify-between gap-4 p-2">
@@ -488,14 +502,12 @@ export default function App() {
           <p className="text-sm sm:text-base text-emerald-50 leading-relaxed font-sans">{actionText}</p>
         </div>
         <button 
-          disabled={!canUse || isAnimating}
+          disabled={isAnimating}
           onClick={() => handleFaceCard(selectedCard)}
           className={`w-full py-3 sm:py-4 rounded-xl font-bold font-serif text-lg sm:text-xl tracking-wide uppercase transition-all shadow-lg flex items-center justify-center gap-2 ${
-            !canUse 
-              ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
-              : isMonster && damagePreview >= health
-                ? 'bg-red-700 hover:bg-red-600 text-white animate-pulse'
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:scale-[1.02] active:scale-[0.98]'
+            isMonster && damagePreview >= health
+              ? 'bg-red-700 hover:bg-red-600 text-white animate-pulse'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:scale-[1.02] active:scale-[0.98]'
           }`}
         >
           {isMonster ? <Sword size={20} /> : (selectedCard.suit === 'hearts' ? <Heart size={20} /> : <Shield size={20} />)}
@@ -504,6 +516,66 @@ export default function App() {
       </div>
     );
   };
+
+  const rulesModal = (
+    <AnimatePresence>
+      {showRules && (
+        <motion.div 
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <motion.div 
+            initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+            className="bg-slate-900 rounded-2xl max-w-2xl w-full p-6 sm:p-8 border border-emerald-800 shadow-2xl my-8 relative"
+          >
+            <button 
+              onClick={() => setShowRules(false)}
+              className="absolute top-4 right-4 p-2 text-emerald-400 hover:text-white hover:bg-emerald-800 rounded-lg transition-colors"
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-3xl font-black text-white mb-6 font-serif">{text.rulesTitle}</h2>
+            <div className="space-y-6 text-emerald-100/90 font-sans leading-relaxed text-sm sm:text-base">
+              <p><strong>{text.goal}</strong> {text.goalDesc}</p>
+              
+              <div>
+                <h3 className="text-yellow-500 font-bold text-lg mb-2 flex items-center gap-2"><Sword size={18}/> {text.monsters}</h3>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>{text.monstersDesc1}</li>
+                  <li>{text.monstersDesc2}</li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="text-yellow-500 font-bold text-lg mb-2 flex items-center gap-2"><Shield size={18}/> {text.weapons}</h3>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>{text.weaponsDesc1}</li>
+                  <li>{text.weaponsDesc2}</li>
+                  <li>{text.weaponsDesc3}</li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="text-yellow-500 font-bold text-lg mb-2 flex items-center gap-2"><Heart size={18}/> {text.potions}</h3>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>{text.potionsDesc1}</li>
+                  <li>{text.potionsDesc2}</li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="text-yellow-500 font-bold text-lg mb-2">{text.roomFlee}</h3>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>{text.roomFleeDesc1}</li>
+                  <li>{text.roomFleeDesc2}</li>
+                </ul>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   if (!hasStarted) {
     return (
@@ -546,63 +618,7 @@ export default function App() {
           </div>
         </div>
 
-        <AnimatePresence>
-          {showRules && (
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
-            >
-              <motion.div 
-                initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
-                className="bg-slate-900 rounded-2xl max-w-2xl w-full p-6 sm:p-8 border border-emerald-800 shadow-2xl my-8 relative"
-              >
-                <button 
-                  onClick={() => setShowRules(false)}
-                  className="absolute top-4 right-4 p-2 text-emerald-400 hover:text-white hover:bg-emerald-800 rounded-lg transition-colors"
-                >
-                  <X size={24} />
-                </button>
-                <h2 className="text-3xl font-black text-white mb-6 font-serif">{text.rulesTitle}</h2>
-                <div className="space-y-6 text-emerald-100/90 font-sans leading-relaxed text-sm sm:text-base">
-                  <p><strong>{text.goal}</strong> {text.goalDesc}</p>
-                  
-                  <div>
-                    <h3 className="text-yellow-500 font-bold text-lg mb-2 flex items-center gap-2"><Sword size={18}/> {text.monsters}</h3>
-                    <ul className="list-disc pl-5 space-y-1">
-                      <li>{text.monstersDesc1}</li>
-                      <li>{text.monstersDesc2}</li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <h3 className="text-yellow-500 font-bold text-lg mb-2 flex items-center gap-2"><Shield size={18}/> {text.weapons}</h3>
-                    <ul className="list-disc pl-5 space-y-1">
-                      <li>{text.weaponsDesc1}</li>
-                      <li>{text.weaponsDesc2}</li>
-                      <li>{text.weaponsDesc3}</li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <h3 className="text-yellow-500 font-bold text-lg mb-2 flex items-center gap-2"><Heart size={18}/> {text.potions}</h3>
-                    <ul className="list-disc pl-5 space-y-1">
-                      <li>{text.potionsDesc1}</li>
-                      <li>{text.potionsDesc2}</li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <h3 className="text-yellow-500 font-bold text-lg mb-2">{text.roomFlee}</h3>
-                    <ul className="list-disc pl-5 space-y-1">
-                      <li>{text.roomFleeDesc1}</li>
-                      <li>{text.roomFleeDesc2}</li>
-                    </ul>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {rulesModal}
       </div>
     );
   }
@@ -646,10 +662,26 @@ export default function App() {
             </button>
           </div>
 
-          <div className="flex gap-4 sm:gap-8 text-center">
+          <div className="flex gap-4 sm:gap-8 text-center items-center">
             <div>
               <div className="text-[10px] sm:text-xs text-emerald-500 uppercase tracking-widest font-bold mb-1">{text.deck}</div>
               <div className="text-xl sm:text-2xl font-bold font-serif text-emerald-100">{deck.length}</div>
+            </div>
+            <div className="flex gap-1 sm:gap-2">
+              <button
+                onClick={handleNewGameMidGame}
+                className="p-2 sm:p-3 rounded-lg text-emerald-600 hover:text-emerald-400 hover:bg-emerald-900/30 transition-colors border border-transparent"
+                title={text.restartGame}
+              >
+                <RefreshCw size={24} />
+              </button>
+              <button
+                onClick={() => setShowRules(true)}
+                className="p-2 sm:p-3 rounded-lg text-emerald-600 hover:text-emerald-400 hover:bg-emerald-900/30 transition-colors border border-transparent"
+                title={text.howToPlay}
+              >
+                <Info size={24} />
+              </button>
             </div>
           </div>
         </div>
@@ -696,7 +728,7 @@ export default function App() {
               onPointerLeave={(e) => e.pointerType === 'mouse' && setHoverWeaponStack(false)}
               onClick={() => setHoverWeaponStack(prev => !prev)}
             >
-              <PlayingCard card={weapon} className="absolute top-0 left-0" showTooltip={true} lang={lang} />
+              <PlayingCard card={weapon} className="absolute top-0 left-0" showTooltip={true} lang={lang} animateEntrance={true} />
               
               {monstersOnWeapon.map((m, i) => (
                 <div 
@@ -704,7 +736,7 @@ export default function App() {
                   className="absolute left-0 w-full z-10 transition-all duration-300 ease-out" 
                   style={{ top: (i + 1) * (hoverWeaponStack ? (window.innerWidth < 640 ? 32 : 48) : (window.innerWidth < 640 ? 16 : 24)) }}
                 >
-                  <PlayingCard card={m} className="shadow-[0_-4px_10px_rgba(0,0,0,0.6)]" showTooltip={true} lang={lang} />
+                  <PlayingCard card={m} className="shadow-[0_-4px_10px_rgba(0,0,0,0.6)]" showTooltip={true} lang={lang} animateEntrance={true} />
                 </div>
               ))}
             </div>
@@ -785,6 +817,46 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {showRestartConfirm && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-4 text-center"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }}
+              className="max-w-md w-full bg-slate-900 border-2 rounded-3xl p-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] border-yellow-600"
+            >
+              <h2 className="text-3xl sm:text-4xl font-black font-serif mb-4 text-yellow-500">
+                {lang === 'en' ? 'Restart Game?' : 'Alusta uuesti?'}
+              </h2>
+              <p className="text-slate-300 font-sans mt-4 mb-8 text-base leading-relaxed px-2">
+                {lang === 'en' 
+                  ? 'Are you sure you want to start a new game? Your current run will be lost.' 
+                  : 'Kas oled kindel, et soovid uut mängu alustada? Sinu praegune seis kaob.'}
+              </p>
+              
+              <div className="flex gap-4">
+                <button 
+                  onClick={cancelRestart}
+                  className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold font-sans tracking-wide transition-colors"
+                >
+                  {lang === 'en' ? 'Cancel' : 'Loobu'}
+                </button>
+                <button 
+                  onClick={confirmRestart}
+                  className="flex-1 py-4 bg-yellow-600 hover:bg-yellow-500 text-slate-950 rounded-xl font-bold font-serif tracking-widest uppercase transition-transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+                >
+                  {text.restartGame}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {rulesModal}
     </div>
   );
 }
